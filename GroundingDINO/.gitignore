@@ -143,4 +143,4 @@ grounding/config/configs
 grounding/version.py
 
 vis/
-tmp/
+tmp/GroundingDINO/weights/*.pth
