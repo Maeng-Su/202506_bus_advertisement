@@ -11,7 +11,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 # 4. Inkscape 1.3.2 AppImage 다운로드 및 실행 권한 부여
-RUN wget -O inkscape.AppImage https://media.inkscape.org/dl/resources/file/inkscape-1.3.2_2023-11-25_091e20ef0f-x86_64.AppImage && \
+RUN wget -O inkscape.AppImage https://inkscape.org/gallery/item/40604/inkscape-1.3.2-x86_64.AppImage && \
     chmod +x inkscape.AppImage
 
 # 5. AppImage를 'inkscape' 명령어로 실행할 수 있도록 심볼릭 링크 생성
