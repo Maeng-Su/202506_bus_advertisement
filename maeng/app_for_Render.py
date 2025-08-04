@@ -68,9 +68,7 @@ def process_ai_file(ai_path, original_filename):
     svg_path = os.path.join(SVG_OUTPUT_FOLDER, unique_filename)
     
     try:
-        # [수정] 더 안정적인 Action 기반의 명령어로 변경
-        actions = f"export-ignore-hidden:true; export-filename:{svg_path}; export-do;"
-        command = ["inkscape", f"--actions={actions}", ai_path]
+        command = ["inkscape", ai_path, f"--export-filename={svg_path}"]
         subprocess.run(command, check=True, capture_output=True, text=True)
     except Exception as e:
         raise RuntimeError(f"Inkscape conversion failed: {e}")
