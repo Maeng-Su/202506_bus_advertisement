@@ -16,4 +16,4 @@ COPY . .
 
 # 6. gunicorn으로 앱 실행
 #    0.0.0.0:8080 포트로 앱을 외부에 노출시킵니다.
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "app_for_Render:app"]

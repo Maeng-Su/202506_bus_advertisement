@@ -6,7 +6,7 @@ import uuid
 import io
 import base64
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory # send_from_directory 추가
 from flask_cors import CORS
 import cairosvg
 import numpy as np
@@ -14,13 +14,16 @@ from PIL import Image
 from werkzeug.utils import secure_filename
 
 # --- Flask 앱 설정 ---
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
 
 # --- 폴더 설정 ---
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+# [수정] index.html이 위치할 static 폴더를 생성
+STATIC_DIR = os.path.join(BASE_DIR, 'static')
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 SVG_OUTPUT_FOLDER = os.path.join(BASE_DIR, 'converted_svgs')
+os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(SVG_OUTPUT_FOLDER, exist_ok=True)
 
@@ -148,6 +151,12 @@ def calculate_endpoint():
     
     return jsonify({"error": "Invalid file type"}), 400
 
+# --- [추가] 웹페이지 제공 엔드포인트 ---
+@app.route('/')
+def serve_index():
+    return send_from_directory(app.static_folder, 'index_for_Render.html')
+
 # --- 서버 실행 ---
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # 디버그 모드에서는 host와 port를 지정할 수 있지만, gunicorn이 이걸 무시함
+    app.run()
