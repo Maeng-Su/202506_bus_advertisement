@@ -65,7 +65,7 @@ def process_ai_file(ai_path, original_filename):
     svg_path = os.path.join(SVG_OUTPUT_FOLDER, unique_filename)
     
     try:
-        command = ["inkscape", ai_path, f"--export-filename={svg_path}"]
+        command = ["inkscape", "--export-ignore-hidden", ai_path, f"--export-filename={svg_path}"]
         subprocess.run(command, check=True, capture_output=True, text=True)
     except Exception as e:
         raise RuntimeError(f"Inkscape conversion failed: {e}")
