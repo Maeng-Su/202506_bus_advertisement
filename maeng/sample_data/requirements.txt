@@ -1,0 +1,6 @@
+Flask
+Flask-Cors
+cairosvg
+numpy
+Pillow
+gunicorn
