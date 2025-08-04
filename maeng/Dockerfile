@@ -1,5 +1,5 @@
 # 1. 베이스 이미지를 Ubuntu 22.04(Jammy) 기반으로 변경
-FROM python:3.9-jammy
+FROM python:3.9-slim-jammy
 
 # 2. Inkscape 최신 안정 버전을 PPA를 통해 설치
 RUN apt-get update && \
