@@ -15,5 +15,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 6. gunicorn으로 앱 실행
-#    0.0.0.0:8080 포트로 앱을 외부에 노출시킵니다.
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "app_for_Render:app"]
+#    0.0.0.0:8080 포트로 앱을 외부에 노출시키고, 타임아웃을 120초로 설정합니다.
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "120", "app_for_Render:app"]

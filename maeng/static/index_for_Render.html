@@ -312,7 +312,8 @@
                 layerSeparator.style.display = 'none';
 
                 try {
-                    const response = await fetch('http://127.0.0.1:5000/api/calculate', {
+                    // [수정] fetch 경로를 상대 경로로 변경
+                    const response = await fetch('/api/calculate', {
                         method: 'POST',
                         body: formData,
                     });
