@@ -323,12 +323,12 @@
 
                     // 왼쪽 패널 시각화
                     if (data.visualization) {
-                        aiVisualizerDiv.innerHTML = data.visualization;
-                        const svgElement = aiVisualizerDiv.querySelector('svg');
-                        if (svgElement) {
-                            svgElement.style.width = '100%';
-                            svgElement.style.height = '100%';
-                        }
+                        // 기존 내용을 지우고, base64 PNG 데이터를 사용하는 img 태그를 생성합니다.
+                        aiVisualizerDiv.innerHTML = ''; 
+                        const img = document.createElement('img');
+                        img.src = `data:image/png;base64,${data.visualization}`;
+                        img.alt = 'AI File Visualization';
+                        aiVisualizerDiv.appendChild(img);
                     }
 
                     // 특별 시각화 데이터 저장 및 정적 UI 생성

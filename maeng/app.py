@@ -90,7 +90,7 @@ def create_png_from_groups(groups, root_attrib, defs):
 def process_ai_file(ai_path, original_filename):
     layer_results = []
     special_visuals = {}
-    svg_content_string = None
+    svg_content_string = None  # 이 변수는 사용하지 않으므로, 삭제하거나 None으로 유지합니다.
     
     unique_filename = f"{uuid.uuid4()}.svg"
     svg_path = os.path.join(SVG_OUTPUT_FOLDER, unique_filename)
@@ -104,7 +104,9 @@ def process_ai_file(ai_path, original_filename):
 
     try:
         with open(svg_path, 'r', encoding='utf-8') as f:
-            svg_content_string = f.read()
+            # SVG를 직접 읽는 대신, 변환된 PNG로 처리하기 위해 이 부분을 수정합니다.
+            # svg_content_string = f.read()
+            pass # SVG 파일 내용은 더 이상 사용하지 않습니다.
 
         tree = ET.parse(svg_path)
         root = tree.getroot()
@@ -118,7 +120,19 @@ def process_ai_file(ai_path, original_filename):
             if 'display:none' not in style:
                 visible_groups.append(g)
 
-        # 필터링된 visible_groups를 기준으로 작업 수행
+        # --- 이 부분에 새로운 시각화 로직을 추가합니다. ---
+        # 보이는 모든 레이어를 합쳐 하나의 PNG로 변환합니다.
+        all_visible_layers_png = create_png_from_groups(visible_groups, root.attrib, defs)
+        
+        # 'visualization' 키에 이 새로운 PNG 데이터를 추가합니다.
+        # 이전에는 svg_content_string을 사용했지만, 이제 PNG 데이터를 사용합니다.
+        processed_data = {
+            "visualization": all_visible_layers_png['image'],
+            "layers": [],
+            "special_visuals": {}
+        }
+        # ----------------------------------------------------
+
         ad_possible_group = None
         ad_area_group = None
 
@@ -143,13 +157,22 @@ def process_ai_file(ai_path, original_filename):
                     "area": png_data['area']
                 })
         else:
-            pixel_area = create_png_from_groups([root], root.attrib, defs)['area']
+            # 보이는 레이어가 없을 때 전체 뷰를 보여줍니다.
+            all_layers_png_data = create_png_from_groups(all_top_level_groups, root.attrib, defs)
             layer_name = os.path.splitext(original_filename)[0]
-            layer_results.append({"name": layer_name, "area": int(pixel_area)})
-            
+            layer_results.append({"name": layer_name, "area": all_layers_png_data['area']})
+
+        # 반환할 데이터 구조를 업데이트합니다.
+        return {
+            "visualization": processed_data['visualization'], # PNG 데이터
+            "layers": layer_results,
+            "special_visuals": special_visuals
+        }
+
     except Exception as e:
         print(f"SVG processing error: {e}")
-        return {"visualization": svg_content_string, "layers": [], "special_visuals": {}}
+        # 오류 발생 시 SVG가 아닌 PNG에 대한 placeholder를 반환하도록 수정
+        return {"visualization": None, "layers": [], "special_visuals": {}}
     finally:
         if os.path.exists(svg_path):
             os.remove(svg_path)
