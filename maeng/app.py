@@ -131,7 +131,7 @@ def process_ai_file(ai_path, original_filename):
 
         special_visuals['ad_possible'] = create_png_from_groups([ad_possible_group], root.attrib, defs)
         special_visuals['ad_area'] = create_png_from_groups([ad_area_group], root.attrib, defs)
-        special_visuals['all_view'] = create_png_from_groups(visible_groups, root.attrib, defs)
+        special_visuals['all_view'] = create_png_from_groups([ad_possible_group, ad_area_group], root.attrib, defs)
         
         if visible_groups:
             for g_element in visible_groups:
