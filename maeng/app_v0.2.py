@@ -8,7 +8,6 @@ import base64
 
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-import cairosvg
 import numpy as np
 from PIL import Image
 from werkzeug.utils import secure_filename
@@ -57,6 +56,8 @@ def create_png_from_groups(groups, root_attrib, defs):
             f.write(svg_string)
 
         # 4. Inkscape를 직접 사용해 SVG를 PNG로 변환
+        # WSL 환경에서 Inkscape 경로를 지정해야 할 수 있습니다. e.g., ["/usr/bin/inkscape", ...]
+        # 또는 PATH에 등록되어 있다면 "inkscape"만으로도 동작합니다.
         command = [
             "inkscape",
             temp_svg_path,
@@ -86,53 +87,33 @@ def create_png_from_groups(groups, root_attrib, defs):
         if os.path.exists(temp_png_path):
             os.remove(temp_png_path)
 
-# --- 핵심 로직: AI 파일 처리 함수 ---
+# --- 핵심 로직: AI 파일 처리 함수 (단순화된 버전) ---
 def process_ai_file(ai_path, original_filename):
-    layer_results = []
-    special_visuals = {}
-    svg_content_string = None
-    
     unique_filename = f"{uuid.uuid4()}.svg"
     svg_path = os.path.join(SVG_OUTPUT_FOLDER, unique_filename)
     
     try:
-        # Inkscape 명령어에서 옵션을 제거하여 단순 변환만 수행
+        # 1. Inkscape를 사용해 AI를 SVG로 변환
         command = ["inkscape", ai_path, f"--export-filename={svg_path}"]
         subprocess.run(command, check=True, capture_output=True, text=True)
     except Exception as e:
         raise RuntimeError(f"Inkscape conversion failed: {e}")
 
     try:
-        with open(svg_path, 'r', encoding='utf-8') as f:
-            svg_content_string = f.read()
-
+        # 2. SVG 파일 파싱 및 처리
         tree = ET.parse(svg_path)
         root = tree.getroot()
         defs = root.find('svg:defs', ns)
         all_top_level_groups = root.findall('svg:g', ns)
 
-        # [핵심] 보이는 레이어만 필터링하는 로직
-        visible_groups = []
-        for g in all_top_level_groups:
-            style = g.get('style', '')
-            if 'display:none' not in style:
-                visible_groups.append(g)
+        # [핵심] 보이는 레이어만 필터링
+        visible_groups = [g for g in all_top_level_groups if 'display:none' not in g.get('style', '')]
 
-        # 필터링된 visible_groups를 기준으로 작업 수행
-        ad_possible_group = None
-        ad_area_group = None
-
-        for g in visible_groups:
-            label = g.get(f'{{{ns["inkscape"]}}}label') or g.get('id', '')
-            if label == "Back":
-                ad_possible_group = g
-            elif label == "Image_01":
-                ad_area_group = g
-
-        special_visuals['ad_possible'] = create_png_from_groups([ad_possible_group], root.attrib, defs)
-        special_visuals['ad_area'] = create_png_from_groups([ad_area_group], root.attrib, defs)
-        special_visuals['all_view'] = create_png_from_groups([ad_possible_group, ad_area_group], root.attrib, defs)
+        # 전체 시각화를 위한 PNG 생성
+        all_visible_layers_png = create_png_from_groups(visible_groups, root.attrib, defs)
         
+        # 각 레이어를 개별적으로 처리
+        layer_results = []
         if visible_groups:
             for g_element in visible_groups:
                 png_data = create_png_from_groups([g_element], root.attrib, defs)
@@ -142,23 +123,27 @@ def process_ai_file(ai_path, original_filename):
                     "image": png_data['image'],
                     "area": png_data['area']
                 })
-        else:
-            pixel_area = create_png_from_groups([root], root.attrib, defs)['area']
+        else: # 보이는 그룹이 없을 경우의 예외 처리
+            all_layers_png_data = create_png_from_groups(all_top_level_groups, root.attrib, defs)
             layer_name = os.path.splitext(original_filename)[0]
-            layer_results.append({"name": layer_name, "area": int(pixel_area)})
-            
+            layer_results.append({
+                "name": layer_name, 
+                "image": all_layers_png_data['image'],
+                "area": all_layers_png_data['area']
+            })
+
+        # 최종 데이터 반환 (special_visuals 제거)
+        return {
+            "visualization": all_visible_layers_png['image'],
+            "layers": layer_results,
+        }
+
     except Exception as e:
         print(f"SVG processing error: {e}")
-        return {"visualization": svg_content_string, "layers": [], "special_visuals": {}}
+        return {"visualization": None, "layers": []}
     finally:
         if os.path.exists(svg_path):
             os.remove(svg_path)
-    
-    return {
-        "visualization": svg_content_string, 
-        "layers": layer_results,
-        "special_visuals": special_visuals
-    }
 
 # --- API 엔드포인트 ---
 @app.route('/api/calculate', methods=['POST'])
@@ -185,12 +170,11 @@ def calculate_endpoint():
 # --- 웹페이지 제공 엔드포인트 ---
 @app.route('/')
 def serve_index():
-    # 로컬 테스트를 위해 static 폴더를 직접 지정할 수 있습니다.
-    # 실제 배포 시에는 이 부분이 app = Flask(__name__, static_folder='static'...) 설정에 의해 처리됩니다.
     static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
     return send_from_directory(static_dir, 'index.html')
 
 
 # --- 서버 실행 ---
 if __name__ == '__main__':
+    # 사용자의 개발 환경을 고려하여 WSL 내부에서 실행 시 외부 접근이 가능하도록 '0.0.0.0'으로 설정
     app.run(host='0.0.0.0', port=5000, debug=True)

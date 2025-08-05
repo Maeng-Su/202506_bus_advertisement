@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>면적 계산기 프로토타입 v2.3</title>
+    <style>
+        /* 기본 스타일 및 폰트 설정 */
+        body {
+            font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* 헤더 스타일 */
+        header {
+            background-color: #ffffff;
+            padding: 15px 20px;
+            font-size: 1.2em;
+            font-weight: bold;
+            border-bottom: 1px solid #ddd;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            color: #1a1a1a;
+        }
+
+        /* 메인 컨테이너 (3단 레이아웃) */
+        .main-container {
+            display: flex;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
+        /* 각 패널의 공통 스타일 */
+        .panel {
+            padding: 20px;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            gap: 20px; /* 요소 간 간격 */
+        }
+        .panel:last-child {
+            border-right: none;
+        }
+
+        /* 패널 너비 설정 */
+        #left-panel { flex: 1.2; }
+        #center-panel { flex: 0.8; background-color: #f8f9fa; }
+        #right-panel { flex: 1.5; }
+
+        /* 섹션 제목 스타일 */
+        h2 {
+            font-size: 1em;
+            margin: 0 0 10px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #007bff;
+            color: #007bff;
+        }
+        
+        /* 시각화 윈도우 스타일 */
+        .visualizer-window {
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #ffffff;
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #999;
+            font-size: 0.9em;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .visualizer-window img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        /* 버튼 스타일 */
+        .btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: background-color 0.2s;
+        }
+        .btn:hover { background-color: #0056b3; }
+        .btn:disabled { background-color: #a0cfff; cursor: not-allowed; }
+        
+        #file-name {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        /* 레이어 선택 UI 스타일 */
+        .layer-select, .layer-list-container {
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            background-color: #fff;
+            padding: 10px;
+        }
+        .layer-list-container {
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+        .layer-select {
+            width: 100%;
+            font-size: 0.9em;
+        }
+
+        .layer-item {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+        }
+
+        .layer-item input { margin-right: 8px; }
+        
+        /* 오른쪽 패널 상단 UI */
+        #right-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-shrink: 0;
+        }
+
+        #area-stats {
+            background-color: #e9f5ff;
+            border: 1px solid #b3d7ff;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            flex-grow: 1;
+        }
+        #area-stats p { margin: 5px 0; }
+
+        #view-options {
+            display: flex;
+            flex-direction: column; /* 체크박스를 세로로 배열 */
+            gap: 10px; /* 체크박스 간 간격 */
+            font-size: 0.9em;
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>🚌 버스 광고 면적 계산기 v2.3</header>
+
+    <div class="main-container">
+        <div id="left-panel" class="panel">
+            <h2>AI 파일</h2>
+            <div>
+                <button id="upload-btn" class="btn">일러스트 파일 불러오기</button>
+                <input type="file" id="file-input" accept=".ai" hidden>
+                <p id="file-name">선택된 파일 없음</p>
+            </div>
+            <div id="ai-visualizer" class="visualizer-window">
+                <span>AI 파일 시각화 영역</span>
+            </div>
+        </div>
+
+        <div id="center-panel" class="panel">
+            <h2>버스 광고가능 영역 선택</h2>
+            <select id="denominator-layer-select" class="layer-select" disabled>
+                <option>AI 파일을 먼저 업로드하세요.</option>
+            </select>
+            
+            <h2 style="margin-top: 15px;">광고 레이어 선택</h2>
+            <div id="numerator-layers-container" class="layer-list-container">
+                <p>AI 파일을 먼저 업로드하세요.</p>
+            </div>
+        </div>
+
+        <div id="right-panel" class="panel">
+            <h2 id="right-panel-title">정보</h2>
+            <div id="right-panel-header">
+                <div id="area-stats">
+                    <p><strong>광고 가능 영역 면적:</strong><br><span id="denominator-area-value">-</span> px²</p>
+                    <p><strong>선택 광고 면적 합계:</strong><br><span id="numerator-area-value">-</span> px²</p>
+                    <hr>
+                    <p><strong><span style="color: #0056b3; font-size: 1.1em;">광고 면적 비율:</span></strong><br><span id="final-ratio-value" style="color: #0056b3; font-size: 1.2em; font-weight: bold;">-</span> %</p>
+                </div>
+                <div id="view-options">
+                    <label><input type="checkbox" id="mask-check"> 마스크</label>
+                    <label><input type="checkbox" id="show-bus-area-check"> 버스영역 표시</label>
+                </div>
+            </div>
+            <div id="layer-visualizer" class="visualizer-window">
+                <span>선택된 레이어 시각화 영역</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- 전역 변수 및 요소 가져오기 ---
+            let allLayersData = [];
+            
+            const uploadBtn = document.getElementById('upload-btn');
+            const fileInput = document.getElementById('file-input');
+            const fileNameDisplay = document.getElementById('file-name');
+            const aiVisualizerDiv = document.getElementById('ai-visualizer');
+
+            const denominatorSelect = document.getElementById('denominator-layer-select');
+            const numeratorContainer = document.getElementById('numerator-layers-container');
+
+            const rightPanelTitle = document.getElementById('right-panel-title');
+            const layerVisualizerDiv = document.getElementById('layer-visualizer');
+            const denominatorAreaValueSpan = document.getElementById('denominator-area-value');
+            const numeratorAreaValueSpan = document.getElementById('numerator-area-value');
+            const finalRatioValueSpan = document.getElementById('final-ratio-value');
+            
+            const maskCheck = document.getElementById('mask-check');
+            const showBusAreaCheck = document.getElementById('show-bus-area-check');
+
+            // --- 이벤트 리스너 ---
+            uploadBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files.length > 0) {
+                    const file = fileInput.files[0];
+                    if (file.name.endsWith('.ai')) { requestCalculation(file); } 
+                    else { alert('.ai 파일만 업로드할 수 있습니다.'); }
+                }
+            });
+
+            denominatorSelect.addEventListener('change', updateCalculationAndVisualization);
+            numeratorContainer.addEventListener('change', updateCalculationAndVisualization);
+            maskCheck.addEventListener('change', updateCalculationAndVisualization);
+            showBusAreaCheck.addEventListener('change', updateCalculationAndVisualization);
+
+            // --- 함수 정의 ---
+            
+            /** 이미지 로딩을 위한 Promise 헬퍼 함수 */
+            function loadImage(layer) {
+                return new Promise((resolve, reject) => {
+                    if (!layer || !layer.image) return reject(new Error("유효하지 않은 레이어 데이터"));
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = () => reject(new Error(`이미지 로딩 실패: ${layer.name}`));
+                    img.src = `data:image/png;base64,${layer.image}`;
+                });
+            }
+
+            /** AI 파일 처리 요청 */
+            async function requestCalculation(file) {
+                const formData = new FormData();
+                formData.append('aiFile', file);
+                resetUIForLoading(file.name);
+
+                try {
+                    const response = await fetch('http://127.0.0.1:5000/api/calculate', { method: 'POST', body: formData });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || `서버 오류: ${response.status}`);
+
+                    if (data.visualization) {
+                        const img = new Image();
+                        img.onload = () => {
+                            aiVisualizerDiv.innerHTML = '';
+                            aiVisualizerDiv.appendChild(img);
+                             // 이미지가 로드된 후 첫 계산을 시작합니다.
+                            updateCalculationAndVisualization();
+                        }
+                        img.src = `data:image/png;base64,${data.visualization}`;
+                        img.alt="AI File Visualization";
+
+                    }
+                    if (Array.isArray(data.layers)) {
+                        allLayersData = data.layers;
+                        populateLayerSelectors();
+                    } else {
+                         throw new Error("서버에서 유효한 레이어 데이터를 받지 못했습니다.");
+                    }
+                } catch (error) {
+                    console.error("오류 발생:", error);
+                    aiVisualizerDiv.innerHTML = `<span>오류: ${error.message}</span>`;
+                    numeratorContainer.innerHTML = `<p>오류: ${error.message}</p>`;
+                } finally {
+                    fileNameDisplay.textContent = `선택된 파일: ${file.name}`;
+                    uploadBtn.disabled = false;
+                    denominatorSelect.disabled = (allLayersData.length === 0);
+                }
+            }
+            
+            function resetUIForLoading(fileName) {
+                fileNameDisplay.textContent = `선택된 파일: ${fileName} (처리 중...)`;
+                uploadBtn.disabled = true;
+                aiVisualizerDiv.innerHTML = '<span>AI 파일 변환 중...</span>';
+                numeratorContainer.innerHTML = '<p>레이어 분석 중입니다...</p>';
+                denominatorSelect.innerHTML = '<option>레이어 분석 중...</option>';
+                denominatorSelect.disabled = true;
+                allLayersData = [];
+                resetRightPanel();
+            }
+
+            function resetRightPanel() {
+                rightPanelTitle.textContent = "정보";
+                denominatorAreaValueSpan.textContent = '-';
+                numeratorAreaValueSpan.textContent = '-';
+                finalRatioValueSpan.textContent = '-';
+                layerVisualizerDiv.innerHTML = '<span>선택된 레이어 시각화 영역</span>';
+            }
+
+            function populateLayerSelectors() {
+                denominatorSelect.innerHTML = '';
+                numeratorContainer.innerHTML = '';
+                if (allLayersData.length === 0) {
+                    denominatorSelect.innerHTML = '<option>레이어 없음</option>';
+                    numeratorContainer.innerHTML = '<p>표시할 레이어가 없습니다.</p>';
+                    return;
+                }
+                allLayersData.forEach((layer, index) => {
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = `${layer.name} (${layer.area.toLocaleString()} px²)`;
+                    denominatorSelect.appendChild(option);
+
+                    const label = document.createElement('label');
+                    label.className = 'layer-item';
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.value = index;
+                    label.appendChild(checkbox);
+                    const textNode = document.createTextNode(` ${layer.name} (${layer.area.toLocaleString()} px²)`);
+                    label.appendChild(textNode);
+                    numeratorContainer.appendChild(label);
+                });
+            }
+
+            /** 계산 및 시각화 업데이트 (핵심 로직) */
+            function updateCalculationAndVisualization() {
+                if (allLayersData.length === 0) return resetRightPanel();
+                
+                const mainImg = aiVisualizerDiv.querySelector('img');
+                 if (!mainImg || !mainImg.complete || mainImg.naturalWidth === 0) {
+                    // 아직 메인 이미지가 로드되지 않았다면 계산을 미룹니다.
+                    return;
+                }
+
+                const denominatorIndex = parseInt(denominatorSelect.value);
+                const selectedNumeratorCheckboxes = numeratorContainer.querySelectorAll('input:checked');
+                const denominatorLayer = allLayersData[denominatorIndex];
+                
+                const numeratorLayers = [];
+                selectedNumeratorCheckboxes.forEach(cb => {
+                    const index = parseInt(cb.value);
+                    if (allLayersData[index]) numeratorLayers.push(allLayersData[index]);
+                });
+                
+                const denominatorArea = denominatorLayer.area;
+                denominatorAreaValueSpan.textContent = denominatorArea.toLocaleString();
+                rightPanelTitle.textContent = `광고 레이어 (${numeratorLayers.length}개 선택)`;
+                
+                const backgroundLayer = showBusAreaCheck.checked ? denominatorLayer : null;
+                
+                // ★★★ 변경된 부분 ★★★
+                // 시각화 함수가 이제 계산된 면적을 콜백으로 반환합니다.
+                displayCompositeImage(numeratorLayers, backgroundLayer, (calculatedNumeratorArea) => {
+                    // 콜백 함수 내에서 면적과 비율 UI를 업데이트합니다.
+                    const ratio = denominatorArea > 0 ? (calculatedNumeratorArea / denominatorArea) * 100 : 0;
+                    numeratorAreaValueSpan.textContent = calculatedNumeratorArea.toLocaleString();
+                    finalRatioValueSpan.textContent = ratio.toFixed(1);
+                });
+            }
+
+            /** 여러 레이어 이미지를 합치고, 면적 계산 후, 시각화 (로직 수정됨) */
+            function displayCompositeImage(adLayers, backgroundLayer, onAreaCalculated) {
+                const mainImg = aiVisualizerDiv.querySelector('img');
+                if (!mainImg) return; // 기본 이미지 없으면 중단
+
+                const canvasWidth = mainImg.naturalWidth;
+                const canvasHeight = mainImg.naturalHeight;
+
+                if (adLayers.length === 0 && !backgroundLayer) {
+                    layerVisualizerDiv.innerHTML = '<span>표시할 레이어가 없습니다.</span>';
+                    if(onAreaCalculated) onAreaCalculated(0);
+                    return;
+                }
+
+                const adLayerPromises = adLayers.map(layer => loadImage(layer));
+                
+                // 1. 광고 레이어들만 먼저 처리하여 면적을 계산합니다.
+                Promise.all(adLayerPromises)
+                    .then(ad_imgs => {
+                        const areaCanvas = document.createElement('canvas');
+                        areaCanvas.width = canvasWidth;
+                        areaCanvas.height = canvasHeight;
+                        const areaCtx = areaCanvas.getContext('2d');
+                        
+                        ad_imgs.forEach(img => areaCtx.drawImage(img, 0, 0));
+
+                        // 겹침이 고려된 실제 면적 계산
+                        const imageData = areaCtx.getImageData(0, 0, canvasWidth, canvasHeight).data;
+                        let unionArea = 0;
+                        for (let i = 3; i < imageData.length; i += 4) { // Alpha 채널만 확인
+                            if (imageData[i] > 0) unionArea++;
+                        }
+                        
+                        // 계산된 면적을 콜백으로 전달
+                        if (onAreaCalculated) onAreaCalculated(unionArea);
+                        
+                        // 2. 이제 화면에 표시될 시각화 작업을 수행합니다.
+                        const backgroundPromise = backgroundLayer ? loadImage(backgroundLayer) : Promise.resolve(null);
+                        backgroundPromise.then(background_img => {
+                            const finalCanvas = document.createElement('canvas');
+                            finalCanvas.width = canvasWidth;
+                            finalCanvas.height = canvasHeight;
+                            const finalCtx = finalCanvas.getContext('2d');
+                            
+                            if (background_img) finalCtx.drawImage(background_img, 0, 0);
+                            
+                            // 마스크 옵션이 켜져있으면, 면적 계산에 사용된 캔버스에 마스크를 적용합니다.
+                            if (maskCheck.checked && ad_imgs.length > 0) {
+                                const maskedData = areaCtx.getImageData(0, 0, canvasWidth, canvasHeight);
+                                const data = maskedData.data;
+                                for (let i = 0; i < data.length; i += 4) {
+                                    if (data[i + 3] > 0) { data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; }
+                                }
+                                areaCtx.putImageData(maskedData, 0, 0);
+                            }
+                            
+                            // 배경 위에 (마스크 적용된) 광고 레이어 이미지를 그립니다.
+                            finalCtx.drawImage(areaCanvas, 0, 0);
+                            layerVisualizerDiv.innerHTML = `<img src="${finalCanvas.toDataURL()}" alt="Composite visualization" />`;
+                        });
+                    })
+                    .catch(err => {
+                        console.error("복합 이미지 생성 오류:", err);
+                        layerVisualizerDiv.innerHTML = `<span>이미지 렌더링 오류</span>`;
+                        if (onAreaCalculated) onAreaCalculated(0);
+                    });
+            }
+        });
+    </script>
+</body>
+</html>
