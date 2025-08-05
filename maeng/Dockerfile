@@ -37,4 +37,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 7. gunicorn으로 앱 실행
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "120", "app_for_Render:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "120", "app_for_Render_v0.2:app"]
