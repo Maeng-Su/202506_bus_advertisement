@@ -1,4 +1,4 @@
-# app_for_Render.py
+# app_for_Render_v0.2.py
 import os
 import subprocess
 import xml.etree.ElementTree as ET
@@ -13,15 +13,15 @@ from PIL import Image
 from werkzeug.utils import secure_filename
 
 # --- Flask 앱 설정 ---
+# Render 배포 환경에 맞게 static 폴더를 지정합니다.
 app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
 
 # --- 폴더 설정 ---
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, 'static')
+# Render는 임시 파일 시스템을 사용하므로, 실행 위치를 기준으로 경로를 설정합니다.
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 SVG_OUTPUT_FOLDER = os.path.join(BASE_DIR, 'converted_svgs')
-os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(SVG_OUTPUT_FOLDER, exist_ok=True)
 
@@ -31,19 +31,17 @@ ns = {
     'inkscape': 'http://www.inkscape.org/namespaces/inkscape'
 }
 
-# --- 헬퍼 함수: SVG 그룹으로 PNG 생성 (Inkscape 직접 사용 버전) ---
+# --- 헬퍼 함수: SVG 그룹으로 PNG 생성 ---
 def create_png_from_groups(groups, root_attrib, defs):
     if not any(g is not None for g in groups):
         return {"image": None, "area": 0}
     
-    # 1. 임시 SVG 파일 생성을 위한 준비
     temp_svg_filename = f"{uuid.uuid4()}.svg"
     temp_png_filename = f"{uuid.uuid4()}.png"
     temp_svg_path = os.path.join(SVG_OUTPUT_FOLDER, temp_svg_filename)
     temp_png_path = os.path.join(SVG_OUTPUT_FOLDER, temp_png_filename)
 
     try:
-        # 2. 새로운 SVG 파일 내용 생성
         new_root = ET.Element('svg', attrib=root_attrib)
         if defs is not None:
             new_root.append(defs)
@@ -53,11 +51,10 @@ def create_png_from_groups(groups, root_attrib, defs):
         
         svg_string = ET.tostring(new_root, encoding='unicode')
         
-        # 3. 임시 SVG 파일을 디스크에 저장
         with open(temp_svg_path, 'w', encoding='utf-8') as f:
             f.write(svg_string)
 
-        # 4. Inkscape를 직접 사용해 SVG를 PNG로 변환
+        # Inkscape CLI를 사용하여 PNG로 변환합니다.
         command = [
             "inkscape",
             temp_svg_path,
@@ -66,7 +63,6 @@ def create_png_from_groups(groups, root_attrib, defs):
         ]
         subprocess.run(command, check=True, capture_output=True, text=True)
 
-        # 5. 생성된 PNG 파일을 읽고 면적 계산
         with open(temp_png_path, 'rb') as f:
             png_bytes = f.read()
 
@@ -81,59 +77,38 @@ def create_png_from_groups(groups, root_attrib, defs):
         return {"image": base64_image, "area": int(pixel_area)}
 
     finally:
-        # 6. 작업이 끝나면 임시 파일 정리
         if os.path.exists(temp_svg_path):
             os.remove(temp_svg_path)
         if os.path.exists(temp_png_path):
             os.remove(temp_png_path)
 
-# --- 핵심 로직: AI 파일 처리 함수 (Python에서 숨김 레이어 필터링) ---
+# --- 핵심 로직: AI 파일 처리 함수 (최신 로직 적용) ---
 def process_ai_file(ai_path, original_filename):
-    layer_results = []
-    special_visuals = {}
-    svg_content_string = None
-    
     unique_filename = f"{uuid.uuid4()}.svg"
     svg_path = os.path.join(SVG_OUTPUT_FOLDER, unique_filename)
     
     try:
-        # Inkscape 명령어는 가장 단순한 형태로 유지
+        # 1. Inkscape를 사용해 AI를 SVG로 변환
         command = ["inkscape", ai_path, f"--export-filename={svg_path}"]
         subprocess.run(command, check=True, capture_output=True, text=True)
     except Exception as e:
         raise RuntimeError(f"Inkscape conversion failed: {e}")
 
     try:
-        with open(svg_path, 'r', encoding='utf-8') as f:
-            svg_content_string = f.read()
-
+        # 2. SVG 파일 파싱 및 처리
         tree = ET.parse(svg_path)
         root = tree.getroot()
         defs = root.find('svg:defs', ns)
         all_top_level_groups = root.findall('svg:g', ns)
 
-        # [핵심] 보이는 레이어만 필터링하는 로직
-        visible_groups = []
-        for g in all_top_level_groups:
-            style = g.get('style', '')
-            if 'display:none' not in style:
-                visible_groups.append(g)
+        # 보이는 레이어만 필터링
+        visible_groups = [g for g in all_top_level_groups if 'display:none' not in g.get('style', '')]
 
-        # 필터링된 visible_groups를 기준으로 작업 수행
-        ad_possible_group = None
-        ad_area_group = None
-
-        for g in visible_groups:
-            label = g.get(f'{{{ns["inkscape"]}}}label') or g.get('id', '')
-            if label == "Back":
-                ad_possible_group = g
-            elif label == "Image_01":
-                ad_area_group = g
-
-        special_visuals['ad_possible'] = create_png_from_groups([ad_possible_group], root.attrib, defs)
-        special_visuals['ad_area'] = create_png_from_groups([ad_area_group], root.attrib, defs)
-        special_visuals['all_view'] = create_png_from_groups([ad_possible_group, ad_area_group], root.attrib, defs)
+        # 전체 시각화를 위한 PNG 생성
+        all_visible_layers_png = create_png_from_groups(visible_groups, root.attrib, defs)
         
+        # 각 레이어를 개별적으로 처리
+        layer_results = []
         if visible_groups:
             for g_element in visible_groups:
                 png_data = create_png_from_groups([g_element], root.attrib, defs)
@@ -143,23 +118,27 @@ def process_ai_file(ai_path, original_filename):
                     "image": png_data['image'],
                     "area": png_data['area']
                 })
-        else:
-            pixel_area = create_png_from_groups([root], root.attrib, defs)['area']
+        else: # 보이는 그룹이 없을 경우 예외 처리
+            all_layers_png_data = create_png_from_groups(all_top_level_groups, root.attrib, defs)
             layer_name = os.path.splitext(original_filename)[0]
-            layer_results.append({"name": layer_name, "area": int(pixel_area)})
-            
+            layer_results.append({
+                "name": layer_name, 
+                "image": all_layers_png_data['image'],
+                "area": all_layers_png_data['area']
+            })
+
+        # 최종 데이터 반환 (special_visuals 제거, 클라이언트 중심 구조)
+        return {
+            "visualization": all_visible_layers_png['image'],
+            "layers": layer_results,
+        }
+
     except Exception as e:
         print(f"SVG processing error: {e}")
-        return {"visualization": svg_content_string, "layers": [], "special_visuals": {}}
+        return {"visualization": None, "layers": []}
     finally:
         if os.path.exists(svg_path):
             os.remove(svg_path)
-    
-    return {
-        "visualization": svg_content_string, 
-        "layers": layer_results,
-        "special_visuals": special_visuals
-    }
 
 # --- API 엔드포인트 ---
 @app.route('/api/calculate', methods=['POST'])
@@ -182,12 +161,14 @@ def calculate_endpoint():
                 os.remove(ai_save_path)
     
     return jsonify({"error": "Invalid file type"}), 400
-
+    
 # --- 웹페이지 제공 엔드포인트 ---
 @app.route('/')
 def serve_index():
+    # Render에서 서비스할 메인 HTML 파일명을 정확히 지정합니다.
     return send_from_directory(app.static_folder, 'index_for_Render.html')
 
 # --- 서버 실행 ---
 if __name__ == '__main__':
+    # Render와 같은 배포 환경을 위해 host를 '0.0.0.0'으로 설정합니다.
     app.run(host='0.0.0.0', port=5000, debug=True)
