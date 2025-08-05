@@ -6,7 +6,7 @@ import uuid
 import io
 import base64
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import cairosvg
 import numpy as np
@@ -30,30 +30,61 @@ ns = {
     'inkscape': 'http://www.inkscape.org/namespaces/inkscape'
 }
 
-# --- 헬퍼 함수: SVG 그룹으로 PNG 생성 ---
+# --- 헬퍼 함수: SVG 그룹으로 PNG 생성 (Inkscape 직접 사용 버전) ---
 def create_png_from_groups(groups, root_attrib, defs):
-    if not any(g is not None for g in groups): # 유효한 그룹이 하나도 없으면 처리 중단
+    if not any(g is not None for g in groups):
         return {"image": None, "area": 0}
     
-    new_root = ET.Element('svg', attrib=root_attrib)
-    if defs is not None:
-        new_root.append(defs)
-    for group in groups:
-        if group is not None:
-            new_root.append(group)
-            
-    svg_string = ET.tostring(new_root, encoding='unicode')
-    png_bytes = cairosvg.svg2png(bytestring=svg_string.encode('utf-8'))
-    
-    img_rgba = Image.open(io.BytesIO(png_bytes)).convert('RGBA')
-    img_array = np.array(img_rgba)
-    
-    alpha_channel = img_array[:, :, 3]
-    pixel_area = np.sum(alpha_channel > 0)
-    
-    base64_image = base64.b64encode(png_bytes).decode('utf-8')
-    
-    return {"image": base64_image, "area": int(pixel_area)}
+    # 1. 임시 SVG 파일 생성을 위한 준비
+    temp_svg_filename = f"{uuid.uuid4()}.svg"
+    temp_png_filename = f"{uuid.uuid4()}.png"
+    temp_svg_path = os.path.join(SVG_OUTPUT_FOLDER, temp_svg_filename)
+    temp_png_path = os.path.join(SVG_OUTPUT_FOLDER, temp_png_filename)
+
+    try:
+        # 2. 새로운 SVG 파일 내용 생성
+        new_root = ET.Element('svg', attrib=root_attrib)
+        if defs is not None:
+            new_root.append(defs)
+        for group in groups:
+            if group is not None:
+                new_root.append(group)
+        
+        svg_string = ET.tostring(new_root, encoding='unicode')
+        
+        # 3. 임시 SVG 파일을 디스크에 저장
+        with open(temp_svg_path, 'w', encoding='utf-8') as f:
+            f.write(svg_string)
+
+        # 4. Inkscape를 직접 사용해 SVG를 PNG로 변환
+        command = [
+            "inkscape",
+            temp_svg_path,
+            "--export-type=png",
+            f"--export-filename={temp_png_path}"
+        ]
+        subprocess.run(command, check=True, capture_output=True, text=True)
+
+        # 5. 생성된 PNG 파일을 읽고 면적 계산
+        with open(temp_png_path, 'rb') as f:
+            png_bytes = f.read()
+
+        img_rgba = Image.open(io.BytesIO(png_bytes)).convert('RGBA')
+        img_array = np.array(img_rgba)
+        
+        alpha_channel = img_array[:, :, 3]
+        pixel_area = np.sum(alpha_channel > 0)
+        
+        base64_image = base64.b64encode(png_bytes).decode('utf-8')
+        
+        return {"image": base64_image, "area": int(pixel_area)}
+
+    finally:
+        # 6. 작업이 끝나면 임시 파일 정리
+        if os.path.exists(temp_svg_path):
+            os.remove(temp_svg_path)
+        if os.path.exists(temp_png_path):
+            os.remove(temp_png_path)
 
 # --- 핵심 로직: AI 파일 처리 함수 ---
 def process_ai_file(ai_path, original_filename):
@@ -65,7 +96,8 @@ def process_ai_file(ai_path, original_filename):
     svg_path = os.path.join(SVG_OUTPUT_FOLDER, unique_filename)
     
     try:
-        command = ["inkscape", "--export-ignore-hidden", ai_path, f"--export-filename={svg_path}"]
+        # Inkscape 명령어에서 옵션을 제거하여 단순 변환만 수행
+        command = ["inkscape", ai_path, f"--export-filename={svg_path}"]
         subprocess.run(command, check=True, capture_output=True, text=True)
     except Exception as e:
         raise RuntimeError(f"Inkscape conversion failed: {e}")
@@ -77,32 +109,34 @@ def process_ai_file(ai_path, original_filename):
         tree = ET.parse(svg_path)
         root = tree.getroot()
         defs = root.find('svg:defs', ns)
-        top_level_groups = root.findall('svg:g', ns)
+        all_top_level_groups = root.findall('svg:g', ns)
 
-        # [수정] 특정 레이어 그룹 찾기 ("Back" 과 "Image_01")
-        ad_possible_group = None # 버스 광고 가능 면적 (Back)
-        ad_area_group = None     # 광고 면적 (Image_01)
+        # [핵심] 보이는 레이어만 필터링하는 로직
+        visible_groups = []
+        for g in all_top_level_groups:
+            style = g.get('style', '')
+            if 'display:none' not in style:
+                visible_groups.append(g)
 
-        for g in top_level_groups:
+        # 필터링된 visible_groups를 기준으로 작업 수행
+        ad_possible_group = None
+        ad_area_group = None
+
+        for g in visible_groups:
             label = g.get(f'{{{ns["inkscape"]}}}label') or g.get('id', '')
             if label == "Back":
                 ad_possible_group = g
             elif label == "Image_01":
                 ad_area_group = g
 
-        # 특별 시각화 데이터 생성
         special_visuals['ad_possible'] = create_png_from_groups([ad_possible_group], root.attrib, defs)
         special_visuals['ad_area'] = create_png_from_groups([ad_area_group], root.attrib, defs)
-        special_visuals['all_view'] = create_png_from_groups([ad_possible_group, ad_area_group], root.attrib, defs)
+        special_visuals['all_view'] = create_png_from_groups(visible_groups, root.attrib, defs)
         
-        # 전체 동적 레이어 목록 생성
-        if top_level_groups:
-            for g_element in top_level_groups:
-                # [수정] PNG 이미지와 면적을 함께 생성
+        if visible_groups:
+            for g_element in visible_groups:
                 png_data = create_png_from_groups([g_element], root.attrib, defs)
-                layer_name = g_element.get(f'{{{ns["inkscape"]}}}label') or g_element.get('id', 'Unnamed Layer')
-                
-                # [수정] 결과에 이름(name), 이미지(image), 면적(area)을 모두 포함
+                layer_name = g_element.get(f'{{{ns["inkscape"]}}}label') or g.get('id', 'Unnamed Layer')
                 layer_results.append({
                     "name": layer_name,
                     "image": png_data['image'],
@@ -147,6 +181,15 @@ def calculate_endpoint():
                 os.remove(ai_save_path)
     
     return jsonify({"error": "Invalid file type"}), 400
+    
+# --- 웹페이지 제공 엔드포인트 ---
+@app.route('/')
+def serve_index():
+    # 로컬 테스트를 위해 static 폴더를 직접 지정할 수 있습니다.
+    # 실제 배포 시에는 이 부분이 app = Flask(__name__, static_folder='static'...) 설정에 의해 처리됩니다.
+    static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+    return send_from_directory(static_dir, 'index.html')
+
 
 # --- 서버 실행 ---
 if __name__ == '__main__':
